@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+# Prompt the user for the domain name
+read -p "Enter the domain name: " domain
+
+# Check if the domain name is provided
+if [ -z "$domain" ]; then
+    echo "Domain name cannot be empty."
+    exit 1
+fi
+
+# Fetch the IP address from the A record of the domain
+ip_address=$(dig +short A "$domain" | head -n 1)
+
+# Check if an IP address was found
+if [ -z "$ip_address" ]; then
+    ip_address="Not detected"
+fi
+
+# Fetch the MX records of the domain
+mx_records=$(dig +short MX "$domain" | awk '{print $2}')
+
+# Initialize MX server IP addresses and mail provider information
+mx_info="Not detected"
+email_hoster="Not detected"
+
+# Check if MX records were found
+if [ -n "$mx_records" ]; then
+    # Process MX records
+    mx_info=$(echo "$mx_records" | while read -r mx; do
+        # Fetch the IP address of the MX record
+        mx_ip=$(dig +short A "$mx")
+        
+        # Perform nslookup to get the mail provider's hostname
+        mail_provider_info="Not detected"
+        if [ -n "$mx_ip" ]; then
+            # Try to find reverse DNS information
+            mail_provider_info=$(nslookup "$mx_ip" 2>/dev/null | grep 'name =' | awk -F'= ' '{print $2}')
+            if [ -z "$mail_provider_info" ]; then
+                mail_provider_info="Reverse DNS not detected"
+            fi
+            mx_info="$mx ($mail_provider_info)"
+        else
+            mx_info="$mx (IP not detected)"
+        fi
+        echo "$mx_info"
+    done | tr '\n' ', ')
+
+    # Remove trailing comma and space
+    mx_info=$(echo "$mx_info" | sed 's/, $//')
+
+    # Extract email hoster from the MX records' IP addresses
+    email_hoster=$(echo "$mx_records" | while read -r mx; do
+        mx_ip=$(dig +short A "$mx")
+        if [ -n "$mx_ip" ]; then
+            hoster=$(nslookup "$mx_ip" 2>/dev/null | grep 'name =' | awk -F'= ' '{print $2}')
+            if [ -n "$hoster" ]; then
+                echo "$hoster"
+            fi
+        fi
+    done | head -n 1) # Display the first found hoster if there are multiple
+
+    # Check if email hoster was found
+    if [ -z "$email_hoster" ]; then
+        email_hoster="Not detected"
+    fi
+fi
+
+# Fetch the nameservers of the domain
+nameservers=$(dig +short NS "$domain" | tr '\n' ', ' | sed 's/, $//')
+
+# Check if nameservers were found
+if [ -z "$nameservers" ]; then
+    nameservers="Not detected"
+fi
+
+# Fetch the SPF records
+spf_records=$(dig +short TXT "$domain" | grep 'v=spf1' | tr '\n' ', ' | sed 's/, $//')
+
+# Check if SPF records were found
+if [ -z "$spf_records" ]; then
+    spf_records="Not detected"
+fi
+
+# Check if WordPress is installed
+function detect_wordpress {
+    url=$1
+    response=$(curl -s "$url")
+
+    # Check for common WordPress indicators in meta tags, HTML comments, and URLs
+    if echo "$response" | grep -qi 'name="generator" content="WordPress'; then
+        echo "yes"
+    elif echo "$response" | grep -q '/wp-content/'; then
+        echo "yes"
+    elif echo "$response" | grep -q '<!--.*wordpress.*-->'; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+wp_installed=$(detect_wordpress "http://$domain")
+
+# Function to print formatted output with word wrapping
+function print_output {
+    local label=$1
+    local value=$2
+    local indent="                   "
+    local formatted_value=$(echo "$value" | fold -s -w 60 | sed '2,$s/^/'"$indent"'/')
+    printf "%-20s : %s\n" "$label" "$formatted_value"
+}
+
+# Function to print section header
+function print_header {
+    local header=$1
+    echo "$header"
+    echo "-------------------"
+}
+
+# Output the required information with structured formatting
+print_header "Current Setup"
+print_output "Domain Name"        "$domain"
+print_output "IP Address"         "$ip_address"
+print_output "Hoster"             "$netname"
+print_output "Nameservers"        "$nameservers"
+print_output "MX Records"         "$mx_info"
+print_output "Email Hoster"       "$email_hoster"
+print_output "SPF Records"        "$spf_records"
+print_output "WP Installed"       "$wp_installed"
+echo "-------------------"
+
+# Output in German
+print_header "Aktuelle Konfiguration"
+print_output "Domainname"         "$domain"
+print_output "IP-Adresse"         "$ip_address"
+print_output "Hoster"             "$netname"
+print_output "Nameserver"         "$nameservers"
+print_output "MX-Einträge"        "$mx_info"
+print_output "E-Mail-Hoster"      "$email_hoster"
+print_output "SPF-Einträge"       "$spf_records"
+print_output "WP Installiert"     "$wp_installed"
+echo "-------------------"
+
+# Output in French
+print_header "Configuration Actuelle"
+print_output "Nom de Domaine"     "$domain"
+print_output "Adresse IP"         "$ip_address"
+print_output "Hébergeur"          "$netname"
+print_output "Serveurs de Noms"   "$nameservers"
+print_output "Enregistrements MX" "$mx_info"
+print_output "Hébergeur Email"    "$email_hoster"
+print_output "Enregistrements SPF" "$spf_records"
+print_output "WP Installé"        "$wp_installed"
+echo "-------------------"
+
+# Output in Italian
+print_header "Configurazione Attuale"
+print_output "Nome di Dominio"    "$domain"
+print_output "Indirizzo IP"       "$ip_address"
+print_output "Hoster"             "$netname"
+print_output "Nameserver"         "$nameservers"
+print_output "Record MX"          "$mx_info"
+print_output "Email Hoster"       "$email_hoster"
+print_output "Record SPF"         "$spf_records"
+print_output "WP Installato"      "$wp_installed"
+echo "-------------------"
